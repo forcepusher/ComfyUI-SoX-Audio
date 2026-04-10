@@ -1,4 +1,4 @@
-# OLD ORIGINAL DOC, DON'T MIND IT MUCH
+# OLD DOC, DON'T MIND IT MUCH
 
 # ComfyUI-Audio-Quality-Enhancer
 
