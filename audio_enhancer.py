@@ -56,15 +56,15 @@ class AudioQualityEnhancer:
                 "demucs_model": (models, {"default": "htdemucs"}),
                 "device": (["cuda", "cpu"], {"default": "cuda"}),
                 
-                # Individual stem enhancement controls
-                "vocals_enhance": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.05, 
-                                 "display": "slider", "label": "Vocals Enhancement"}),
-                "drums_enhance": ("FLOAT", {"default": 0.6, "min": 0.0, "max": 1.0, "step": 0.05, 
-                               "display": "slider", "label": "Drums Enhancement"}),
-                "bass_enhance": ("FLOAT", {"default": 0.4, "min": 0.0, "max": 1.0, "step": 0.05, 
-                              "display": "slider", "label": "Bass Enhancement"}),
-                "other_enhance": ("FLOAT", {"default": 0.4, "min": 0.0, "max": 1.0, "step": 0.05, 
-                               "display": "slider", "label": "Other Enhancement"}),
+                # Individual stem controls (negative = reduce, 0 = neutral, positive = enhance)
+                "vocals_enhance": ("FLOAT", {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.05, 
+                                 "display": "slider", "label": "Vocals (- reduce / + enhance)"}),
+                "drums_enhance": ("FLOAT", {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.05, 
+                               "display": "slider", "label": "Drums (- reduce / + enhance)"}),
+                "bass_enhance": ("FLOAT", {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.05, 
+                              "display": "slider", "label": "Bass (- reduce / + enhance)"}),
+                "other_enhance": ("FLOAT", {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.05, 
+                               "display": "slider", "label": "Other (- reduce / + enhance)"}),
                 
                 # General audio enhancement controls
                 "clarity": ("FLOAT", {"default": 0.4, "min": 0.0, "max": 1.0, "step": 0.05, 
@@ -132,8 +132,8 @@ class AudioQualityEnhancer:
     def enhance_audio(self, audio: Dict, enhancement_level: float = 0.5,
                      use_source_separation: bool = True, demucs_model: str = "htdemucs",
                      device: str = "cuda",
-                     vocals_enhance: float = 0.5, drums_enhance: float = 0.6,
-                     bass_enhance: float = 0.4, other_enhance: float = 0.4,
+                     vocals_enhance: float = 0.0, drums_enhance: float = 0.0,
+                     bass_enhance: float = 0.0, other_enhance: float = 0.0,
                      clarity: float = 0.4, dynamics: float = 0.3, 
                      warmth: float = 0.2, air: float = 0.3,
                      dolby_effect: float = 0.0,
@@ -196,15 +196,17 @@ class AudioQualityEnhancer:
             
             print(f"Processing audio: channels={num_channels}, sample_rate={sample_rate}")
             
-            # Scale parameters based on enhancement level
-            vocals_enhance *= enhancement_level
-            drums_enhance *= enhancement_level
-            bass_enhance *= enhancement_level
-            other_enhance *= enhancement_level
+            # Scale general parameters by master level
             clarity *= enhancement_level
             dynamics *= enhancement_level
             warmth *= enhancement_level
             air *= enhancement_level
+            
+            # Scale stem controls by master level (preserves sign for reduce/enhance)
+            vocals_enhance *= enhancement_level
+            drums_enhance *= enhancement_level
+            bass_enhance *= enhancement_level
+            other_enhance *= enhancement_level
             
             # Determine whether to use source separation
             can_separate = (self.source_separation_available and 
@@ -451,14 +453,18 @@ class AudioQualityEnhancer:
                 air=air
             )
     
-    def _enhance_vocals(self, vocals, sample_rate, level=0.5, clarity=0.4, air=0.3):
+    def _enhance_vocals(self, vocals, sample_rate, level=0.0, clarity=0.4, air=0.3):
         """
-        Enhance vocals with focus on clarity and presence
+        Enhance or reduce vocals. Negative level attenuates, positive enhances.
         """
-        if level <= 0:
+        if abs(level) < 0.01:
             return vocals
             
         result = vocals.copy()
+        
+        if level < 0:
+            attenuation = max(0.0, 1.0 + level)
+            return result * attenuation
         
         # Add presence (2-5kHz boost)
         if clarity > 0 and PEDALBOARD_AVAILABLE:
@@ -502,14 +508,18 @@ class AudioQualityEnhancer:
         
         return result
     
-    def _enhance_drums(self, drums, sample_rate, level=0.6, dynamics=0.3, air=0.3):
+    def _enhance_drums(self, drums, sample_rate, level=0.0, dynamics=0.3, air=0.3):
         """
-        Enhance drums with focus on transients and high-end
+        Enhance or reduce drums. Negative level attenuates, positive enhances.
         """
-        if level <= 0:
+        if abs(level) < 0.01:
             return drums
             
         result = drums.copy()
+        
+        if level < 0:
+            attenuation = max(0.0, 1.0 + level)
+            return result * attenuation
         
         # Transient enhancement
         # Calculate the envelope
@@ -547,14 +557,18 @@ class AudioQualityEnhancer:
         
         return result
     
-    def _enhance_bass(self, bass, sample_rate, level=0.4, warmth=0.2):
+    def _enhance_bass(self, bass, sample_rate, level=0.0, warmth=0.2):
         """
-        Enhance bass with focus on warmth and definition
+        Enhance or reduce bass. Negative level attenuates, positive enhances.
         """
-        if level <= 0:
+        if abs(level) < 0.01:
             return bass
             
         result = bass.copy()
+        
+        if level < 0:
+            attenuation = max(0.0, 1.0 + level)
+            return result * attenuation
         
         # Add harmonics for definition
         if warmth > 0 and PEDALBOARD_AVAILABLE:
@@ -582,14 +596,18 @@ class AudioQualityEnhancer:
         
         return result
     
-    def _enhance_other(self, other, sample_rate, level=0.4, clarity=0.4, warmth=0.2, air=0.3):
+    def _enhance_other(self, other, sample_rate, level=0.0, clarity=0.4, warmth=0.2, air=0.3):
         """
-        Enhance other instruments with a balanced approach
+        Enhance or reduce other instruments. Negative level attenuates, positive enhances.
         """
-        if level <= 0:
+        if abs(level) < 0.01:
             return other
             
         result = other.copy()
+        
+        if level < 0:
+            attenuation = max(0.0, 1.0 + level)
+            return result * attenuation
         
         # General enhancement with balanced EQ
         if PEDALBOARD_AVAILABLE:
@@ -833,12 +851,6 @@ class AudioQualityEnhancer:
             # Return original audio on error
             return audio
     
-    def _process_without_separation(self, audio, sample_rate, level=0.5, mode="Standard",
-                                  clarity=0.4, dynamics=0.3, warmth=0.2, air=0.3):
-        """
-        Process audio without source separation - fallback method
-        """
-
 # Register nodes
 NODE_CLASS_MAPPINGS = {
     "AudioQualityEnhancer": AudioQualityEnhancer
